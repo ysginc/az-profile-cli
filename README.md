@@ -1,3 +1,5 @@
+> ⚠️ **Work in Progress** - This project is currently under active development
+
 # 🚀 Azure CLI Profile Manager
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Shell](https://img.shields.io/badge/Shell-Bash-4EAA25.svg)](https://www.gnu.org/software/bash/) [![Azure CLI](https://img.shields.io/badge/Azure-CLI-0078D4.svg)](https://docs.microsoft.com/en-us/cli/azure/)
 
