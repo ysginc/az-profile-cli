@@ -6,7 +6,7 @@
 # Usage: source ./az-profile-helpers.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-AZ_PROFILE_SCRIPT="$SCRIPT_DIR/az-profile"
+AZ_PROFILE_SCRIPT="az-profile"
 
 # Quick activate function
 azp() {
