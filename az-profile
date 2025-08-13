@@ -386,7 +386,7 @@ create_profile_from_file() {
     fi
     
     log_success "Profile '$profile_name' created and configured from file!"
-    log_info "To use: $0 activate $profile_name"
+    log_info "To use: az-profile activate $profile_name"
 }
 
 # Show usage information
@@ -394,7 +394,7 @@ show_usage() {
     cat << EOF
 Azure DevOps Profile Manager
 
-Usage: $0 <command> [arguments] [options]
+Usage: az-profile <command> [arguments] [options]
 
 Commands:
     list, ls                    List all available profiles
@@ -433,24 +433,24 @@ Options for 'configure':
 
 Examples:
     # Manual profile creation
-    $0 create myorg --type server --org https://devops.company.com/DefaultCollection --pat-file ./my-pat
-    $0 create cloud-org --type cloud --org https://dev.azure.com/myorg --cloud AzureCloud
-    $0 create gov-org --type cloud --org https://dev.azure.us/myorg --cloud AzureUSGovernment
+    az-profile create myorg --type server --org https://devops.company.com/DefaultCollection --pat-file ./my-pat
+    az-profile create cloud-org --type cloud --org https://dev.azure.com/myorg --cloud AzureCloud
+    az-profile create gov-org --type cloud --org https://dev.azure.us/myorg --cloud AzureUSGovernment
     
     # Profile file creation - single profile
-    $0 create myprofile --profile-file ./profiles/myorg.profile
-    $0 create myprofile --profile-url https://example.com/profiles/myorg.profile
+    az-profile create myprofile --profile-file ./profiles/myorg.profile
+    az-profile create myprofile --profile-url https://example.com/profiles/myorg.profile
     
     # Profile creation from Git repositories
-    $0 create myprofile --profile-url https://github.com/myorg/az-profiles.git
-    $0 create myprofile --profile-url https://github.com/myorg/az-profiles.git --profile-name dev
-    $0 create --profile-url https://github.com/myorg/az-profiles.git --batch
+    az-profile create myprofile --profile-url https://github.com/myorg/az-profiles.git
+    az-profile create myprofile --profile-url https://github.com/myorg/az-profiles.git --profile-name dev
+    az-profile create --profile-url https://github.com/myorg/az-profiles.git --batch
     
     # Other commands
-    $0 login myorg --method pat --pat-file ./my-pat
-    $0 configure myorg --org https://devops.company.com/DefaultCollection --non-interactive
-    $0 run myorg devops project list
-    $0 deactivate
+    az-profile login myorg --method pat --pat-file ./my-pat
+    az-profile configure myorg --org https://devops.company.com/DefaultCollection --non-interactive
+    az-profile run myorg devops project list
+    az-profile deactivate
 
 Profile Storage: $PROFILES_DIR
 EOF
@@ -484,7 +484,7 @@ list_profiles() {
     if [ "$found_profiles" = false ]; then
         echo "  No profiles found."
         echo ""
-        echo "Create a profile with: $0 create <profile_name>"
+        echo "Create a profile with: az-profile create <profile_name>"
     fi
 }
 
@@ -530,8 +530,8 @@ create_profile() {
     if [ -z "$profile_name" ]; then
         if [ "$batch_mode" = false ]; then
             log_error "Profile name is required"
-            echo "Usage: $0 create <profile_name> [options]"
-            echo "       $0 create --profile-url <url> --batch"
+            echo "Usage: az-profile create <profile_name> [options]"
+            echo "       az-profile create --profile-url <url> --batch"
             exit 1
         else
             # Set a dummy profile name for batch mode - it will be ignored anyway
@@ -757,12 +757,12 @@ create_profile() {
         fi
         
         log_success "Profile '$profile_name' created and configured successfully!"
-        log_info "To use: $0 activate $profile_name"
+        log_info "To use: az-profile activate $profile_name"
     else
         log_info "Next steps:"
-        echo "  1. $0 login $profile_name"
-        echo "  2. $0 configure $profile_name"
-        echo "  3. $0 activate $profile_name"
+        echo "  1. az-profile login $profile_name"
+        echo "  2. az-profile configure $profile_name"
+        echo "  3. az-profile activate $profile_name"
     fi
 }
 
@@ -772,7 +772,7 @@ activate_profile() {
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: $0 activate <profile_name>"
+        echo "Usage: az-profile activate <profile_name>"
         exit 1
     fi
     
@@ -850,7 +850,7 @@ delete_profile() {
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: $0 delete <profile_name>"
+        echo "Usage: az-profile delete <profile_name>"
         exit 1
     fi
     
@@ -885,7 +885,7 @@ login_profile() {
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: $0 login <profile_name>"
+        echo "Usage: az-profile login <profile_name>"
         exit 1
     fi
     
@@ -941,7 +941,7 @@ configure_profile() {
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: $0 configure <profile_name>"
+        echo "Usage: az-profile configure <profile_name>"
         exit 1
     fi
     
@@ -982,7 +982,7 @@ run_with_profile() {
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: $0 run <profile_name> <az_command>"
+        echo "Usage: az-profile run <profile_name> <az_command>"
         exit 1
     fi
     
@@ -1000,8 +1000,8 @@ run_with_profile() {
     
     if [ $# -eq 0 ]; then
         log_error "Azure CLI command is required"
-        echo "Usage: $0 run <profile_name> <az_command>"
-        echo "Example: $0 run myorg devops project list"
+        echo "Usage: az-profile run <profile_name> <az_command>"
+        echo "Example: az-profile run myorg devops project list"
         exit 1
     fi
     
