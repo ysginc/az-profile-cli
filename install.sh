@@ -19,6 +19,7 @@ NC='\033[0m' # No Color
 REPO_URL="https://github.com/ysginc/az-profile-cli"
 DEFAULT_INSTALL_DIR="$HOME/.local/bin"
 DEFAULT_CONFIG_DIR="$HOME/.config/az-profile-cli"
+DEFAULT_REPO_DIR="$HOME/.local/share/az-profile-cli"
 PROFILES_DIR="$HOME/.az-profiles"
 
 # Helper functions
@@ -186,29 +187,39 @@ install_files() {
             ;;
         "git")
             log_info "Cloning from repository: $REPO_URL"
-            local temp_dir=$(mktemp -d)
             
-            # Clone with progress
-            (
-                git clone --depth 1 "$REPO_URL" "$temp_dir" >/dev/null 2>&1
-            ) &
-            spinner $!
+            # Create repo directory if it doesn't exist
+            mkdir -p "$(dirname "$DEFAULT_REPO_DIR")"
             
-            if [ ! -d "$temp_dir" ] || [ ! -f "$temp_dir/az-profile" ]; then
+            # Clone or update repository
+            if [ -d "$DEFAULT_REPO_DIR/.git" ]; then
+                log_info "Repository already exists, updating..."
+                (
+                    cd "$DEFAULT_REPO_DIR" && git pull >/dev/null 2>&1
+                ) &
+                spinner $!
+            else
+                # Clone with progress
+                (
+                    git clone "$REPO_URL" "$DEFAULT_REPO_DIR" >/dev/null 2>&1
+                ) &
+                spinner $!
+            fi
+            
+            if [ ! -d "$DEFAULT_REPO_DIR" ] || [ ! -f "$DEFAULT_REPO_DIR/az-profile" ]; then
                 log_error "Failed to clone repository or files are missing"
-                rm -rf "$temp_dir"
+                rm -rf "$DEFAULT_REPO_DIR"
                 exit 1
             fi
             
-            # Copy files
-            cp "$temp_dir/az-profile" "$INSTALL_DIR/"
-            cp "$temp_dir/az-profile-helpers.sh" "$CONFIG_DIR/"
-            if [ -d "$temp_dir/examples" ]; then
-                cp -r "$temp_dir/examples" "$CONFIG_DIR/"
+            # Create symlinks instead of copying files
+            ln -sf "$DEFAULT_REPO_DIR/az-profile" "$INSTALL_DIR/az-profile"
+            ln -sf "$DEFAULT_REPO_DIR/az-profile-helpers.sh" "$CONFIG_DIR/az-profile-helpers.sh"
+            if [ -d "$DEFAULT_REPO_DIR/examples" ]; then
+                # Remove existing examples directory to avoid conflicts with symlink
+                rm -rf "$CONFIG_DIR/examples"
+                ln -sf "$DEFAULT_REPO_DIR/examples" "$CONFIG_DIR/examples"
             fi
-            
-            # Cleanup
-            rm -rf "$temp_dir"
             ;;
     esac
     
