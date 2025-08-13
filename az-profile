@@ -522,7 +522,7 @@ create_profile() {
                 # These indicate we're using profile files
                 ;;
         esac
-        ((i++))
+        i=$((i + 1))
     done
     
     # Profile name is only required for manual creation or single profile from Git
@@ -690,7 +690,22 @@ create_profile() {
     log_success "Created profile '$profile_name'"
     log_info "Profile directory: $profile_path"
     
-    # Auto-configure if options provided
+    # Configure Azure cloud if provided
+    if [ -n "$azure_cloud" ]; then
+        log_info "Setting Azure cloud to: $azure_cloud"
+        if ! command -v az >/dev/null 2>&1; then
+            log_error "Azure CLI (az) is not installed or not in PATH"
+            exit 1
+        fi
+        if AZURE_CONFIG_DIR="$profile_path" az cloud set --name="$azure_cloud"; then
+            log_success "Azure cloud configured for profile '$profile_name'"
+        else
+            log_error "Failed to configure Azure cloud"
+            exit 1
+        fi
+    fi
+    
+    # Auto-configure if auth/org options provided
     if [ -n "$org_url" ] || [ -n "$pat_token" ] || [ -n "$pat_file" ]; then
         log_info "Auto-configuring profile..."
         
@@ -724,22 +739,6 @@ create_profile() {
             fi
         fi
         
-        # Configure Azure cloud if provided
-        if [ -n "$azure_cloud" ]; then
-            log_info "Setting Azure cloud to: $azure_cloud"
-            if ! command -v az >/dev/null 2>&1; then
-                log_error "Azure CLI (az) is not installed or not in PATH"
-                exit 1
-            fi
-            AZURE_CONFIG_DIR="$profile_path" az cloud set --name="$azure_cloud"
-            if [ $? -eq 0 ]; then
-                log_success "Azure cloud configured for profile '$profile_name'"
-            else
-                log_error "Failed to configure Azure cloud"
-                exit 1
-            fi
-        fi
-        
         # Configure organization if provided
         if [ -n "$org_url" ]; then
             log_info "Setting organization to: $org_url"
@@ -759,10 +758,17 @@ create_profile() {
         log_success "Profile '$profile_name' created and configured successfully!"
         log_info "To use: az-profile activate $profile_name"
     else
-        log_info "Next steps:"
-        echo "  1. az-profile login $profile_name"
-        echo "  2. az-profile configure $profile_name"
-        echo "  3. az-profile activate $profile_name"
+        # Show completion message and next steps
+        if [ -n "$azure_cloud" ]; then
+            log_success "Profile '$profile_name' created and configured successfully!"
+            log_info "To use: az-profile activate $profile_name"
+        else
+            log_success "Profile '$profile_name' created successfully!"
+            log_info "Next steps:"
+            echo "  1. az-profile login $profile_name"
+            echo "  2. az-profile configure $profile_name"
+            echo "  3. az-profile activate $profile_name"
+        fi
     fi
 }
 
