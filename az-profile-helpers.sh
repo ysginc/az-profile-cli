@@ -83,19 +83,42 @@ azp-delete() {
     "$AZ_PROFILE_SCRIPT" delete "$1"
 }
 
-# Login to profile
+# Login to profile (deprecated - use azp-devops-login)
 azp-login() {
-    "$AZ_PROFILE_SCRIPT" login "$1"
+    echo "Warning: azp-login is deprecated. Use azp-devops-login instead." >&2
+    "$AZ_PROFILE_SCRIPT" devops login "$1"
 }
 
-# Configure profile
+# Configure profile (deprecated - use azp-devops-configure)
 azp-configure() {
-    "$AZ_PROFILE_SCRIPT" configure "$1"
+    echo "Warning: azp-configure is deprecated. Use azp-devops-configure instead." >&2
+    "$AZ_PROFILE_SCRIPT" devops configure "$1"
 }
 
-# Run command with profile
+# Run command with profile (deprecated - use azp-devops-run)
 azp-run() {
-    "$AZ_PROFILE_SCRIPT" run "$@"
+    echo "Warning: azp-run is deprecated. Use azp-devops-run instead." >&2
+    "$AZ_PROFILE_SCRIPT" devops run "$@"
+}
+
+# DevOps login to profile
+azp-devops-login() {
+    "$AZ_PROFILE_SCRIPT" devops login "$@"
+}
+
+# DevOps configure profile
+azp-devops-configure() {
+    "$AZ_PROFILE_SCRIPT" devops configure "$@"
+}
+
+# DevOps run command with profile
+azp-devops-run() {
+    "$AZ_PROFILE_SCRIPT" devops run "$@"
+}
+
+# DevOps help
+azp-devops-help() {
+    "$AZ_PROFILE_SCRIPT" devops help
 }
 
 # az-profile function that intercepts calls to handle activation in current shell
@@ -193,33 +216,49 @@ Main Commands (with shell session integration):
 Quick Commands:
   azp                     List all profiles
   azp <profile>           Activate a profile
-  azp list               List all profiles  
+  azp list               List all profiles
   azp status             Show current profile status
   azp deactivate         Deactivate current profile
 
-Full Commands:
+Profile Management:
   azp-list               List all profiles
   azp-status             Show current profile status
   azp-off                Deactivate current profile
   azp-create <name>      Create a new profile
   azp-delete <name>      Delete a profile
-  azp-login <name>       Login to a profile
-  azp-configure <name>   Configure DevOps settings for a profile
-  azp-run <name> <cmd>   Run az command with specific profile
+
+DevOps Commands (New):
+  azp-devops-login <profile> [options]     Login to DevOps with profile
+  azp-devops-configure <profile> [options] Configure DevOps settings for profile
+  azp-devops-run <profile> <command>       Run DevOps command with profile
+  azp-devops-help                          Show DevOps command help
+
+Legacy DevOps Commands (Deprecated):
+  azp-login <name>       Login to a profile (use azp-devops-login)
+  azp-configure <name>   Configure DevOps settings (use azp-devops-configure)
+  azp-run <name> <cmd>   Run command with profile (use azp-devops-run)
 
 Examples:
-  # Activation (both work the same in interactive shells):
-  azp myorg                          # Quick activate myorg profile
-  az-profile activate myorg          # Full command activate myorg profile
+  # Profile activation:
+  azp myorg                              # Quick activate myorg profile
+  az-profile activate myorg              # Full command activate myorg profile
   
-  # Other commands:
-  azp-create mycompany               # Create mycompany profile
-  az-profile create mycompany        # Same as above (delegates to script)
-  azp-login mycompany                # Login to mycompany profile
-  az-profile login mycompany         # Same as above (delegates to script)
-  az-profile run myorg devops project list  # Run command with myorg profile
+  # Profile management:
+  azp-create mycompany                   # Create mycompany profile
+  azp-delete oldprofile                  # Delete oldprofile
+  
+  # DevOps operations (new commands):
+  azp-devops-login myorg                 # Login to DevOps with myorg profile
+  azp-devops-configure myorg --org https://dev.azure.com/myorg
+  azp-devops-run myorg project list      # Run DevOps command with myorg profile
+  azp-devops-help                        # Show DevOps help
+  
+  # Full command equivalents:
+  az-profile devops login myorg          # Same as azp-devops-login myorg
+  az-profile devops run myorg project list  # Same as azp-devops-run
 
 For full help: ./az-profile help
+For DevOps help: azp-devops-help or ./az-profile devops help
 EOF
 }
 

@@ -750,12 +750,19 @@ Commands:
     deactivate                  Deactivate current profile
     delete <profile_name>       Delete a profile
     status                      Show current active profile
-    login <profile_name>        Login to Azure for a specific profile
-    configure <profile_name>    Configure DevOps defaults for a profile
-    run <profile_name> <cmd>    Run an az command with a specific profile
+    devops <subcommand>         DevOps-specific commands (login, configure, run, help)
+    login <profile_name>        Login to Azure for a specific profile (DEPRECATED - use 'devops login')
+    configure <profile_name>    Configure DevOps defaults for a profile (DEPRECATED - use 'devops configure')
+    run <profile_name> <cmd>    Run an az command with a specific profile (DEPRECATED - use 'devops run')
     update                      Update az-profile installation (requires git-based install)
     version                     Show version information
     help                        Show this help message
+
+DevOps Commands:
+    devops login <profile>      Login to Azure DevOps for a specific profile
+    devops configure <profile>  Configure DevOps defaults for a profile
+    devops run <profile> <cmd>  Run an az devops command with a specific profile
+    devops help                 Show detailed DevOps command help
 
 Options for 'create':
     --type <type>               Profile type: 'cloud' or 'server' (default: prompt)
@@ -1364,9 +1371,390 @@ run_with_profile() {
     AZURE_CONFIG_DIR="$profile_path" az "$@"
 }
 
+# Handle DevOps subcommands
+handle_devops_command() {
+    local subcommand="$1"
+    shift
+    
+    case "$subcommand" in
+        "login")
+            devops_login_profile "$@"
+            ;;
+        "configure")
+            devops_configure_profile "$@"
+            ;;
+        "run")
+            devops_run_with_profile "$@"
+            ;;
+        "help"|"--help"|"-h"|"")
+            show_devops_usage
+            ;;
+        *)
+            log_error "Unknown devops subcommand: $subcommand"
+            echo ""
+            show_devops_usage
+            exit 1
+            ;;
+    esac
+}
+
+# DevOps-specific login functionality
+devops_login_profile() {
+    local profile_name="$1"
+    shift
+    
+    if [ -z "$profile_name" ]; then
+        log_error "Profile name is required"
+        echo "Usage: az-profile devops login <profile_name> [options]"
+        exit 1
+    fi
+    
+    local profile_path="$PROFILES_DIR/$profile_name"
+    
+    if [ ! -d "$profile_path" ]; then
+        log_error "Profile '$profile_name' does not exist"
+        exit 1
+    fi
+    
+    if ! command -v az >/dev/null 2>&1; then
+        log_error "Azure CLI (az) is not installed or not in PATH"
+        exit 1
+    fi
+    
+    # Parse DevOps-specific login options
+    local pat_token=""
+    local pat_file=""
+    local login_method=""
+    local azure_cloud=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --pat)
+                pat_token="$2"
+                shift 2
+                ;;
+            --pat-file)
+                pat_file="$2"
+                shift 2
+                ;;
+            --method)
+                login_method="$2"
+                shift 2
+                ;;
+            --cloud)
+                azure_cloud="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Usage: az-profile devops login <profile_name> [--pat <token>] [--pat-file <path>] [--method <method>] [--cloud <cloud>]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    log_info "DevOps login for profile '$profile_name'..."
+    
+    # Handle PAT authentication
+    if [ -n "$pat_file" ]; then
+        if [ -f "$pat_file" ]; then
+            pat_token=$(cat "$pat_file" 2>/dev/null | tr -d '\n')
+            if [ -z "$pat_token" ]; then
+                log_error "PAT file '$pat_file' is empty or unreadable"
+                exit 1
+            fi
+        else
+            log_error "PAT file '$pat_file' not found"
+            exit 1
+        fi
+    fi
+    
+    # Configure Azure cloud if specified
+    if [ -n "$azure_cloud" ]; then
+        log_info "Setting Azure cloud to: $azure_cloud"
+        AZURE_CONFIG_DIR="$profile_path" az cloud set --name="$azure_cloud"
+    fi
+    
+    # Perform login based on method or available credentials
+    if [ -n "$pat_token" ] || [ "$login_method" = "pat" ]; then
+        if [ -n "$pat_token" ]; then
+            log_info "Logging in with PAT..."
+            echo "$pat_token" | AZURE_CONFIG_DIR="$profile_path" az devops login 2>/dev/null
+            if [ $? -eq 0 ]; then
+                log_success "Logged in using PAT for profile '$profile_name'"
+            else
+                log_error "Failed to login with provided PAT"
+                exit 1
+            fi
+        else
+            log_error "PAT method selected but no PAT provided"
+            exit 1
+        fi
+    elif [ "$login_method" = "azure-ad" ]; then
+        log_info "Logging in with Azure AD..."
+        AZURE_CONFIG_DIR="$profile_path" az login
+        log_success "Azure AD login completed for profile '$profile_name'"
+    elif [ "$login_method" = "interactive" ]; then
+        log_info "Interactive login (no subscriptions)..."
+        AZURE_CONFIG_DIR="$profile_path" az login --allow-no-subscriptions
+        log_success "Interactive login completed for profile '$profile_name'"
+    else
+        # Interactive selection if no method specified
+        echo "Choose DevOps login method:"
+        echo "1) Regular Azure login (Azure AD)"
+        echo "2) Azure DevOps Server with PAT (Personal Access Token)"
+        echo "3) Azure DevOps Server interactive (no subscriptions)"
+        echo -n "Enter choice [1-3]: "
+        read -r choice
+        
+        case $choice in
+            2)
+                echo -n "Enter PAT (Personal Access Token): "
+                read -rs pat_token
+                echo ""
+                if [ -n "$pat_token" ]; then
+                    echo "$pat_token" | AZURE_CONFIG_DIR="$profile_path" az devops login
+                    log_success "Logged in using PAT for profile '$profile_name'"
+                else
+                    log_error "PAT is required for this login method"
+                    exit 1
+                fi
+                ;;
+            3)
+                AZURE_CONFIG_DIR="$profile_path" az login --allow-no-subscriptions
+                ;;
+            *)
+                AZURE_CONFIG_DIR="$profile_path" az login
+                ;;
+        esac
+        log_success "DevOps login completed for profile '$profile_name'"
+    fi
+}
+
+# DevOps-specific configuration functionality
+devops_configure_profile() {
+    local profile_name="$1"
+    shift
+    
+    if [ -z "$profile_name" ]; then
+        log_error "Profile name is required"
+        echo "Usage: az-profile devops configure <profile_name> [options]"
+        exit 1
+    fi
+    
+    local profile_path="$PROFILES_DIR/$profile_name"
+    
+    if [ ! -d "$profile_path" ]; then
+        log_error "Profile '$profile_name' does not exist"
+        exit 1
+    fi
+    
+    if ! command -v az >/dev/null 2>&1; then
+        log_error "Azure CLI (az) is not installed or not in PATH"
+        exit 1
+    fi
+    
+    # Parse DevOps-specific configure options
+    local org_url=""
+    local azure_cloud=""
+    local non_interactive=false
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --org)
+                org_url="$2"
+                shift 2
+                ;;
+            --cloud)
+                azure_cloud="$2"
+                shift 2
+                ;;
+            --non-interactive)
+                non_interactive=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Usage: az-profile devops configure <profile_name> [--org <url>] [--cloud <cloud>] [--non-interactive]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    log_info "Configuring Azure DevOps defaults for '$profile_name'"
+    
+    # Configure Azure cloud if specified
+    if [ -n "$azure_cloud" ]; then
+        log_info "Setting Azure cloud to: $azure_cloud"
+        AZURE_CONFIG_DIR="$profile_path" az cloud set --name="$azure_cloud"
+    fi
+    
+    # Get organization URL if not provided and not in non-interactive mode
+    if [ -z "$org_url" ] && [ "$non_interactive" = false ]; then
+        echo ""
+        echo "Example organizations:"
+        echo "  Azure DevOps (cloud): https://dev.azure.com/yourorg"
+        echo "  Azure DevOps Server:   https://your-server/your-collection"
+        echo ""
+        echo -n "Enter organization URL: "
+        read -r org_url
+    fi
+    
+    # Configure organization if provided
+    if [ -n "$org_url" ]; then
+        log_info "Setting default organization for profile '$profile_name'..."
+        AZURE_CONFIG_DIR="$profile_path" az devops configure --defaults organization="$org_url"
+        if [ $? -eq 0 ]; then
+            log_success "DevOps organization configured for profile '$profile_name'"
+        else
+            log_error "Failed to configure DevOps organization"
+            exit 1
+        fi
+    else
+        if [ "$non_interactive" = true ]; then
+            log_warning "No organization URL provided in non-interactive mode"
+        else
+            log_warning "No organization URL provided, skipping configuration"
+        fi
+    fi
+    
+    log_success "DevOps configuration completed for profile '$profile_name'"
+}
+
+# DevOps-specific command execution functionality
+devops_run_with_profile() {
+    local profile_name="$1"
+    shift
+    
+    if [ -z "$profile_name" ]; then
+        log_error "Profile name is required"
+        echo "Usage: az-profile devops run <profile_name> <az_command>"
+        exit 1
+    fi
+    
+    local profile_path="$PROFILES_DIR/$profile_name"
+    
+    if [ ! -d "$profile_path" ]; then
+        log_error "Profile '$profile_name' does not exist"
+        exit 1
+    fi
+    
+    if ! command -v az >/dev/null 2>&1; then
+        log_error "Azure CLI (az) is not installed or not in PATH"
+        exit 1
+    fi
+    
+    if [ $# -eq 0 ]; then
+        log_error "Azure CLI command is required"
+        echo "Usage: az-profile devops run <profile_name> <az_command>"
+        echo "Example: az-profile devops run myorg devops project list"
+        exit 1
+    fi
+    
+    log_info "Running DevOps command with profile '$profile_name': az $*"
+    AZURE_CONFIG_DIR="$profile_path" az "$@"
+}
+
+# Show DevOps-specific usage information
+show_devops_usage() {
+    cat << EOF
+Azure DevOps Profile Manager - DevOps Commands
+
+Usage: az-profile devops <subcommand> [arguments] [options]
+
+DevOps Subcommands:
+    login <profile_name>         Login to Azure DevOps for a specific profile
+    configure <profile_name>     Configure DevOps defaults for a profile
+    run <profile_name> <cmd>     Run an az devops command with a specific profile
+    help                         Show this DevOps help message
+
+Options for 'devops login':
+    --pat <token>               Personal Access Token
+    --pat-file <path>           Path to file containing PAT
+    --method <method>           Login method: 'azure-ad', 'pat', 'interactive'
+    --cloud <cloud>             Azure cloud environment
+
+Options for 'devops configure':
+    --org <url>                 Organization URL
+    --cloud <cloud>             Azure cloud environment
+    --non-interactive           Don't prompt for input
+
+Examples:
+    # DevOps login with PAT
+    az-profile devops login myorg --method pat --pat-file ./my-pat
+    az-profile devops login myorg --pat \$MY_PAT_TOKEN
+    
+    # DevOps configuration
+    az-profile devops configure myorg --org https://dev.azure.com/myorg
+    az-profile devops configure myserver --org https://devops.company.com/DefaultCollection --non-interactive
+    
+    # Run DevOps commands
+    az-profile devops run myorg devops project list
+    az-profile devops run myorg devops repo list --project MyProject
+
+Note: These commands provide the same functionality as the legacy 'login', 'configure',
+and 'run' commands but are specifically organized for Azure DevOps operations.
+
+EOF
+}
+
+# Check if legacy DevOps commands are being used
+check_devops_deprecation() {
+    local command="$1"
+    shift
+    local args=("$@")
+    
+    # Check for DevOps-specific options that indicate DevOps usage
+    local has_devops_options=false
+    local i=0
+    while [ $i -lt ${#args[@]} ]; do
+        case "${args[$i]}" in
+            --type)
+                if [ $((i + 1)) -lt ${#args[@]} ] && [ "${args[$((i + 1))]}" = "server" ]; then
+                    has_devops_options=true
+                fi
+                ;;
+            --pat|--pat-file|--org)
+                has_devops_options=true
+                ;;
+            --method)
+                if [ $((i + 1)) -lt ${#args[@]} ] && [ "${args[$((i + 1))]}" = "pat" ]; then
+                    has_devops_options=true
+                fi
+                ;;
+        esac
+        i=$((i + 1))
+    done
+    
+    # Check if running DevOps-specific commands
+    local running_devops_cmd=false
+    for arg in "${args[@]}"; do
+        if [[ "$arg" =~ ^devops ]]; then
+            running_devops_cmd=true
+            break
+        fi
+    done
+    
+    # Show deprecation warning if DevOps functionality detected
+    if [ "$has_devops_options" = true ] || [ "$running_devops_cmd" = true ]; then
+        echo ""
+        log_warning "DEPRECATION NOTICE: The '$command' command with DevOps-specific options is deprecated"
+        log_info "Please use the new DevOps command structure: az-profile devops $command"
+        log_info "Example: az-profile devops $command <profile_name> [options]"
+        echo ""
+        echo "This legacy command will continue to work but may be removed in a future version."
+        echo "Press Enter to continue or Ctrl+C to cancel..."
+        read -r
+        echo ""
+    fi
+}
+
 # Main script logic
 main() {
     case "$1" in
+        "devops")
+            handle_devops_command "${@:2}"
+            ;;
         "list"|"ls")
             list_profiles
             # Check for updates after listing profiles (common command)
@@ -1390,12 +1778,18 @@ main() {
             check_for_updates "true"  # Silent check
             ;;
         "login")
+            # Check for DevOps deprecation before executing
+            check_devops_deprecation "login" "${@:2}"
             login_profile "$2"
             ;;
         "configure")
+            # Check for DevOps deprecation before executing
+            check_devops_deprecation "configure" "${@:2}"
             configure_profile "$2"
             ;;
         "run")
+            # Check for DevOps deprecation before executing
+            check_devops_deprecation "run" "${@:2}"
             run_with_profile "$2" "${@:3}"
             ;;
         "update")
