@@ -751,9 +751,9 @@ Commands:
     delete <profile_name>       Delete a profile
     status                      Show current active profile
     devops <subcommand>         DevOps-specific commands (login, configure, run, help)
-    login <profile_name>        Login to Azure for a specific profile (DEPRECATED - use 'devops login')
-    configure <profile_name>    Configure DevOps defaults for a profile (DEPRECATED - use 'devops configure')
-    run <profile_name> <cmd>    Run an az command with a specific profile (DEPRECATED - use 'devops run')
+    login <profile_name>        Login to Azure for a specific profile
+    configure <profile_name>    Configure Azure cloud settings for a profile
+    run <profile_name> <cmd>    Run an az command with a specific profile
     update                      Update az-profile installation (requires git-based install)
     version                     Show version information
     help                        Show this help message
@@ -783,8 +783,8 @@ Options for 'login':
     --cloud <cloud>             Azure cloud environment
 
 Options for 'configure':
-    --org <url>                 Organization URL
-    --cloud <cloud>             Azure cloud environment
+    --cloud <cloud>             Azure cloud: 'AzureCloud', 'AzureUSGovernment', 'AzureChinaCloud', 'AzureGermanCloud'
+    --subscription <sub>        Default subscription ID or name
     --non-interactive           Don't prompt for input
 
 Examples:
@@ -804,8 +804,8 @@ Examples:
     
     # Other commands
     az-profile login myorg --method pat --pat-file ./my-pat
-    az-profile configure myorg --org https://devops.company.com/DefaultCollection --non-interactive
-    az-profile run myorg devops project list
+    az-profile configure myorg --cloud AzureUSGovernment --subscription "My Subscription"
+    az-profile run myorg account show
     az-profile deactivate
 
 Profile Storage: $PROFILES_DIR
@@ -1297,13 +1297,14 @@ login_profile() {
     log_success "Login completed for profile '$profile_name'"
 }
 
-# Configure DevOps defaults for a profile
+# Configure Azure cloud settings for a profile
 configure_profile() {
     local profile_name="$1"
+    shift
     
     if [ -z "$profile_name" ]; then
         log_error "Profile name is required"
-        echo "Usage: az-profile configure <profile_name>"
+        echo "Usage: az-profile configure <profile_name> [options]"
         exit 1
     fi
     
@@ -1319,22 +1320,101 @@ configure_profile() {
         exit 1
     fi
     
-    echo "Configure Azure DevOps defaults for '$profile_name'"
-    echo ""
-    echo "Example organizations:"
-    echo "  Azure DevOps (cloud): https://dev.azure.com/yourorg"
-    echo "  Azure DevOps Server:   https://your-server/your-collection"
-    echo ""
-    echo -n "Enter organization URL: "
-    read -r org_url
+    # Parse options
+    local azure_cloud=""
+    local subscription=""
+    local non_interactive=false
     
-    if [ -n "$org_url" ]; then
-        log_info "Setting default organization for profile '$profile_name'..."
-        AZURE_CONFIG_DIR="$profile_path" az devops configure --defaults organization="$org_url"
-        log_success "Configuration completed for profile '$profile_name'"
-    else
-        log_warning "No organization URL provided, skipping configuration"
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --cloud)
+                azure_cloud="$2"
+                shift 2
+                ;;
+            --subscription)
+                subscription="$2"
+                shift 2
+                ;;
+            --non-interactive)
+                non_interactive=true
+                shift
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                echo "Usage: az-profile configure <profile_name> [--cloud <cloud>] [--subscription <subscription>] [--non-interactive]"
+                exit 1
+                ;;
+        esac
+    done
+    
+    log_info "Configuring Azure settings for profile '$profile_name'"
+    
+    # Configure Azure cloud if not provided and not in non-interactive mode
+    if [ -z "$azure_cloud" ] && [ "$non_interactive" = false ]; then
+        echo ""
+        echo "Available Azure clouds:"
+        echo "  1) AzureCloud (default)"
+        echo "  2) AzureUSGovernment"
+        echo "  3) AzureChinaCloud"
+        echo "  4) AzureGermanCloud"
+        echo ""
+        echo -n "Select cloud [1-4] or enter custom cloud name: "
+        read -r cloud_choice
+        
+        case $cloud_choice in
+            1|"")
+                azure_cloud="AzureCloud"
+                ;;
+            2)
+                azure_cloud="AzureUSGovernment"
+                ;;
+            3)
+                azure_cloud="AzureChinaCloud"
+                ;;
+            4)
+                azure_cloud="AzureGermanCloud"
+                ;;
+            *)
+                azure_cloud="$cloud_choice"
+                ;;
+        esac
     fi
+    
+    # Set Azure cloud if provided
+    if [ -n "$azure_cloud" ]; then
+        log_info "Setting Azure cloud to: $azure_cloud"
+        AZURE_CONFIG_DIR="$profile_path" az cloud set --name="$azure_cloud"
+        if [ $? -eq 0 ]; then
+            log_success "Azure cloud configured for profile '$profile_name'"
+        else
+            log_error "Failed to configure Azure cloud"
+            exit 1
+        fi
+    fi
+    
+    # Set default subscription if not provided and not in non-interactive mode
+    if [ -z "$subscription" ] && [ "$non_interactive" = false ]; then
+        echo ""
+        echo "Available subscriptions:"
+        AZURE_CONFIG_DIR="$profile_path" az account list --query "[].{Name:name, Id:id, State:state}" -o table 2>/dev/null || echo "  No subscriptions found or not logged in"
+        echo ""
+        echo -n "Enter subscription ID or name (or press Enter to skip): "
+        read -r subscription
+    fi
+    
+    # Set default subscription if provided
+    if [ -n "$subscription" ]; then
+        log_info "Setting default subscription to: $subscription"
+        AZURE_CONFIG_DIR="$profile_path" az account set --subscription="$subscription"
+        if [ $? -eq 0 ]; then
+            log_success "Default subscription configured for profile '$profile_name'"
+        else
+            log_error "Failed to configure default subscription"
+            exit 1
+        fi
+    fi
+    
+    log_success "Azure configuration completed for profile '$profile_name'"
 }
 
 # Run an az command with a specific profile
@@ -1698,56 +1778,6 @@ and 'run' commands but are specifically organized for Azure DevOps operations.
 EOF
 }
 
-# Check if legacy DevOps commands are being used
-check_devops_deprecation() {
-    local command="$1"
-    shift
-    local args=("$@")
-    
-    # Check for DevOps-specific options that indicate DevOps usage
-    local has_devops_options=false
-    local i=0
-    while [ $i -lt ${#args[@]} ]; do
-        case "${args[$i]}" in
-            --type)
-                if [ $((i + 1)) -lt ${#args[@]} ] && [ "${args[$((i + 1))]}" = "server" ]; then
-                    has_devops_options=true
-                fi
-                ;;
-            --pat|--pat-file|--org)
-                has_devops_options=true
-                ;;
-            --method)
-                if [ $((i + 1)) -lt ${#args[@]} ] && [ "${args[$((i + 1))]}" = "pat" ]; then
-                    has_devops_options=true
-                fi
-                ;;
-        esac
-        i=$((i + 1))
-    done
-    
-    # Check if running DevOps-specific commands
-    local running_devops_cmd=false
-    for arg in "${args[@]}"; do
-        if [[ "$arg" =~ ^devops ]]; then
-            running_devops_cmd=true
-            break
-        fi
-    done
-    
-    # Show deprecation warning if DevOps functionality detected
-    if [ "$has_devops_options" = true ] || [ "$running_devops_cmd" = true ]; then
-        echo ""
-        log_warning "DEPRECATION NOTICE: The '$command' command with DevOps-specific options is deprecated"
-        log_info "Please use the new DevOps command structure: az-profile devops $command"
-        log_info "Example: az-profile devops $command <profile_name> [options]"
-        echo ""
-        echo "This legacy command will continue to work but may be removed in a future version."
-        echo "Press Enter to continue or Ctrl+C to cancel..."
-        read -r
-        echo ""
-    fi
-}
 
 # Main script logic
 main() {
@@ -1778,18 +1808,12 @@ main() {
             check_for_updates "true"  # Silent check
             ;;
         "login")
-            # Check for DevOps deprecation before executing
-            check_devops_deprecation "login" "${@:2}"
             login_profile "$2"
             ;;
         "configure")
-            # Check for DevOps deprecation before executing
-            check_devops_deprecation "configure" "${@:2}"
-            configure_profile "$2"
+            configure_profile "${@:2}"
             ;;
         "run")
-            # Check for DevOps deprecation before executing
-            check_devops_deprecation "run" "${@:2}"
             run_with_profile "$2" "${@:3}"
             ;;
         "update")
